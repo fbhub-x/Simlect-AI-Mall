@@ -10,7 +10,7 @@ services:
     container_name: simlect-mysql
     networks: [simlect-net]
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root
       TZ: Asia/Shanghai
@@ -116,7 +116,7 @@ services:
     container_name: simlect-es
     networks: [simlect-net]
     ports:
-      - "9200:9200"
+      - "9201:9200"
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"

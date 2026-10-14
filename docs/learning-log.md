@@ -31,3 +31,11 @@
 - 项目提供哪些功能？
 - Java 和 Python 分别负责什么？
 - 我还不理解哪些名词？
+
+
+- ## 第 2 天：环境检查与中间件启动
+
+学习日期：2026年10月14日
+原始源码基线：8c76a8f84e28d35a32c0c2882e18e88122f079a5
+本机目录：E:\BaiduNetdiskDownload\Simlect-AI-Mall\source
+学习分支：study/baseline
