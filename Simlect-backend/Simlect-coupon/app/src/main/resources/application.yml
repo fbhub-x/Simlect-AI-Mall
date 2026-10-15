@@ -43,7 +43,7 @@ spring:
         dashboard: ${SENTINEL_DASHBOARD:127.0.0.1:8858}
       eager: true
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:3306/simlect_coupon?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&allowMultiQueries=true&useSSL=false
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/simlect_coupon?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&allowMultiQueries=true&useSSL=false
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
