@@ -9,13 +9,14 @@ import com.aliyuncs.DefaultAcsClient;
 // 导入阿里云API客户端接口，用于发送请求
 import com.aliyuncs.IAcsClient;
 // 导入阿里云服务端异常类，处理服务端返回的错误
-import com.aliyuncs.exceptions.ServerException;
+import com.aliyuncs.exceptions.ClientException;
 // 导入阿里云HTTP方法枚举，用于设置请求类型（如POST）
 import com.aliyuncs.http.MethodType;
 // 导入阿里云区域配置类，用于指定服务地域
 import com.aliyuncs.profile.DefaultProfile;
 // 导入项目自定义的邮件服务接口
 import com.simlect.biz.EmailService;
+import com.simlect.exception.BusinessException;
 // 导入项目自定义的工具类，用于生成随机数等通用功能
 import com.simlect.utils.StringTools;
 // 导入Spring的@Value注解，用于从配置文件读取属性值
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 // 导入Spring的@Service注解，将该类标记为Spring管理的服务层组件
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 // 使用@Service注解声明这是一个Spring服务Bean，会被自动扫描并注册
 @Service
@@ -58,6 +60,11 @@ public class AliEmailServiceImpl implements EmailService {
     @Override
     // 方法定义：发送验证码邮件，参数toEmail为接收邮箱地址，返回生成的验证码字符串
     public String sendVerificationCode(String toEmail) {
+        if (!StringUtils.hasText(accessKeyId) || !StringUtils.hasText(accessKeySecret)
+                || !StringUtils.hasText(accountName)) {
+            log.error("邮件服务配置缺失，请检查 ALIYUN_ACCESS_KEY_ID、ALIYUN_ACCESS_KEY_SECRET、ALIYUN_DM_ACCOUNT_NAME");
+            throw new BusinessException("邮件发送服务未配置，请联系管理员");
+        }
         // 第1步：生成6位随机数字验证码（调用自定义工具类方法）
         String verificationCode = StringTools.getRandomNumber(6);
 
@@ -101,13 +108,9 @@ public class AliEmailServiceImpl implements EmailService {
             log.info("发送成功，RequestId: {}" , response.getData());
             // 返回生成的验证码，供调用方暂存或后续校验
             return verificationCode;
-        } catch (ServerException e) {
-            // 捕获服务端异常（如业务错误、参数错误等），转换为运行时异常抛出
-            throw new RuntimeException(e);
-        } catch (com.aliyuncs.exceptions.ClientException e) {
-            // 捕获客户端异常（如网络问题、签名错误等），转换为运行时异常抛出
-            // 注意：此处使用了完全限定名，虽然上方已导入ClientException，但此处写全名也可编译
-            throw new RuntimeException(e);
+        } catch (ClientException e) {
+            log.warn("验证码邮件发送失败，错误码: {}，RequestId: {}", e.getErrCode(), e.getRequestId());
+            throw new BusinessException("验证码邮件发送失败，请稍后重试", e);
         }
     }
 }

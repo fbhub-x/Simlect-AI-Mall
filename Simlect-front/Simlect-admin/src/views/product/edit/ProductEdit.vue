@@ -259,6 +259,7 @@ const submitProduct = async (sensitiveConfirmToken) => {
   if (route.params.productId && !confirmPwd) {
     proxy.ConfirmSensitive({
       message: '保存将更新商品价格与库存等信息，是否继续？',
+      url: proxy.Api.updateProduct,
       okfun: doSave,
     })
     return

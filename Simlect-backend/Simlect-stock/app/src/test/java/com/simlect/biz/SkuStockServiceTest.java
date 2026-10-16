@@ -85,6 +85,7 @@ class SkuStockServiceTest {
                 () -> skuStockService.changeStock(changeDto(-3)));
 
         assertEquals("库存不足", e.getMessage());
+        verify(skuStockMapper, never()).increaseStock(anyString(), anyString(), anyInt());
     }
 
     @Test
@@ -94,6 +95,32 @@ class SkuStockServiceTest {
         int affected = skuStockService.changeStock(changeDto(-3));
 
         assertEquals(1, affected);
+    }
+
+    @Test
+    void changeStock_increaseMissingRow_createsInitialStock() {
+        when(skuStockMapper.increaseStock(PRODUCT_ID, SKU_HASH, 10)).thenReturn(1);
+
+        assertEquals(1, skuStockService.changeStock(changeDto(10)));
+        verify(skuStockMapper, never()).changeStock(anyString(), anyString(), anyInt());
+        verify(skuStockMapper, never()).upsert(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void changeStock_increaseExistingRow_acceptsMySqlUpdatedRowCount() {
+        when(skuStockMapper.increaseStock(PRODUCT_ID, SKU_HASH, 10)).thenReturn(2);
+
+        assertEquals(2, skuStockService.changeStock(changeDto(10)));
+        verify(skuStockMapper, never()).upsert(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void changeStock_emptyOrZeroAmount_rejectsWithoutWriting() {
+        assertThrows(BusinessException.class, () -> skuStockService.changeStock(null));
+        assertThrows(BusinessException.class, () -> skuStockService.changeStock(new SkuStockChangeDTO()));
+        assertThrows(BusinessException.class, () -> skuStockService.changeStock(changeDto(0)));
+
+        verifyNoInteractions(skuStockMapper);
     }
 
     // ==================== setStock ====================

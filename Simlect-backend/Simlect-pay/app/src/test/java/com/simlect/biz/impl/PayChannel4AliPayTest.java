@@ -132,6 +132,7 @@ class PayChannel4AliPayTest {
         assertEquals(PAY_ORDER_ID, result.getPayOrderId());
         assertEquals(new BigDecimal("33.90"), result.getAmount());
         assertNull(result.getPayInfo());
+        assertTrue(result.isLocalMock());
         verify(redisComponent, org.mockito.Mockito.never()).markPayTradeInitiated(anyString());
     }
 
@@ -167,6 +168,7 @@ class PayChannel4AliPayTest {
 
             assertNotNull(dto);
             assertEquals("<form>alipay-form</form>", dto.getPayInfo());
+            assertFalse(dto.isLocalMock());
             assertEquals(PAY_ORDER_ID, dto.getPayOrderId());
             assertEquals(new BigDecimal("100.00"), dto.getAmount());
             assertEquals(1, construction.constructed().size());
@@ -228,6 +230,7 @@ class PayChannel4AliPayTest {
                     PayChannelEnum.ALIPAY_WAP, PAY_ORDER_ID, SUBJECT, new BigDecimal("0.50"));
 
             assertEquals("<html>wap</html>", dto.getPayInfo());
+            assertFalse(dto.isLocalMock());
             // 金额低于最小支付额时归一化到 0.01
             assertEquals(new BigDecimal("0.50"), dto.getAmount());
             verify(redisComponent).markPayTradeInitiated(PAY_ORDER_ID);

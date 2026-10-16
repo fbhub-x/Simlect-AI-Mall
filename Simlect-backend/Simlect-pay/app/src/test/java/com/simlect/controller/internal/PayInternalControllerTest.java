@@ -97,7 +97,23 @@ class PayInternalControllerTest {
                         .content("{\"payChannel\":\"alipay\",\"payOrderId\":\"PO1\",\"subject\":\"s\",\"amount\":0.01}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.payOrderId").value("PO1"))
+                .andExpect(jsonPath("$.data.localMock").value(false))
                 .andExpect(jsonPath("$.data.payInfo").value("html"));
+    }
+
+    @Test
+    void getPayUrl_localMock_exposesModeWithoutPaymentForm() throws Exception {
+        PayInfoDTO info = new PayInfoDTO(null, "PO1", new BigDecimal("0.01"));
+        info.setLocalMock(true);
+        when(payInternalService.getPayUrl(any(PayUrlRequestDTO.class))).thenReturn(info);
+
+        mockMvc.perform(post("/internal/pay/channel/getPayUrl")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"payChannel\":\"alipay\",\"payOrderId\":\"PO1\",\"subject\":\"s\",\"amount\":0.01}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.localMock").value(true))
+                .andExpect(jsonPath("$.data.payOrderId").value("PO1"))
+                .andExpect(jsonPath("$.data.payInfo").doesNotExist());
     }
 
     @Test

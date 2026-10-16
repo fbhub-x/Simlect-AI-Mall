@@ -8,6 +8,7 @@ function Invoke-MysqlFile([string]$path) {
   if (-not (Test-Path $path)) { throw "missing $path" }
   Write-Host "==> $path"
   Get-Content $path -Raw -Encoding UTF8 | docker exec -i simlect-mysql mysql -uroot -proot --default-character-set=utf8mb4
+  if ($LASTEXITCODE -ne 0) { throw "MySQL 初始化失败: $path" }
 }
 
 $health = docker inspect -f "{{.State.Health.Status}}" simlect-mysql 2>$null
@@ -19,6 +20,7 @@ Invoke-MysqlFile (Join-Path $SqlRoot "00_create_databases.sql")
 Invoke-MysqlFile (Join-Path $SqlRoot "00b_nacos_seata_databases.sql")
 Invoke-MysqlFile (Join-Path $SqlRoot "14_nacos.sql")
 Invoke-MysqlFile (Join-Path $SqlRoot "15_seata.sql")
+Invoke-MysqlFile (Join-Path $SqlRoot "20_seata_lock_key_capacity.sql")
 Invoke-MysqlFile (Join-Path $SqlRoot "16_seata_undo_log.sql")
 
 Write-Host "OK: nacos / seata / undo_log 已初始化"

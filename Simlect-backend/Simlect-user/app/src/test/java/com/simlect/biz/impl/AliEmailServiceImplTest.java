@@ -1,37 +1,82 @@
 package com.simlect.biz.impl;
 
-import com.simlect.biz.EmailService;
-import org.junit.jupiter.api.Disabled;
+import com.aliyuncs.CommonRequest;
+import com.aliyuncs.CommonResponse;
+import com.aliyuncs.DefaultAcsClient;
+import com.aliyuncs.exceptions.ClientException;
+import com.aliyuncs.exceptions.ServerException;
+import com.simlect.exception.BusinessException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
-/**
- * AliEmailServiceImpl 单元测试。
- * <p>
- * 该实现中阿里云 {@code DefaultAcsClient} 在方法内部直接 {@code new} 构造，
- * 无法注入 mock；且成功路径依赖真实阿里云 DirectMail 网络调用。
- * 纯单测环境下既无法打桩客户端，也无法离线断言成功行为，故整体标记 @Disabled。
- */
-@ExtendWith(MockitoExtension.class)
-@Disabled("sendVerificationCode 内部 new DefaultAcsClient 且依赖真实阿里云网络，无法纯单测")
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
 class AliEmailServiceImplTest {
+    private AliEmailServiceImpl service;
 
-    @InjectMocks
-    private AliEmailServiceImpl aliEmailService;
+    @BeforeEach
+    void setUp() {
+        service = new AliEmailServiceImpl();
+        ReflectionTestUtils.setField(service, "accessKeyId", "test-access-key-id");
+        ReflectionTestUtils.setField(service, "accessKeySecret", "test-access-key-secret");
+        ReflectionTestUtils.setField(service, "accountName", "notice@example.com");
+        ReflectionTestUtils.setField(service, "replyToAddress", "false");
+    }
 
-    @Test
-    void placeholder() {
-        // 见类级 @Disabled 说明
+    static Stream<Arguments> missingConfiguration() {
+        return Stream.of("accessKeyId", "accessKeySecret", "accountName")
+                .flatMap(field -> Stream.of(null, "", "   ").map(value -> Arguments.of(field, value)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("missingConfiguration")
+    void missingConfiguration_rejectsBeforeCreatingCloudClient(String field, String value) {
+        ReflectionTestUtils.setField(service, field, value);
+        try (var clients = mockConstruction(DefaultAcsClient.class)) {
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> service.sendVerificationCode("recipient@example.com"));
+
+            assertEquals("邮件发送服务未配置，请联系管理员", error.getMessage());
+            assertTrue(clients.constructed().isEmpty());
+        }
     }
 
     @Test
-    void serviceImplementsEmailService() {
-        assertTrue(aliEmailService instanceof EmailService);
+    void successfulSend_returnsSixDigitCode() throws Exception {
+        CommonResponse response = new CommonResponse();
+        response.setData("{\"RequestId\":\"test-request-id\"}");
+        try (var clients = mockConstruction(DefaultAcsClient.class,
+                (client, context) -> when(client.getCommonResponse(any(CommonRequest.class))).thenReturn(response))) {
+            String code = service.sendVerificationCode("recipient@example.com");
+
+            assertTrue(code.matches("[0-9]{6}"));
+            verify(clients.constructed().get(0)).getCommonResponse(any(CommonRequest.class));
+        }
     }
 
-    private static void assertTrue(boolean value) {
-        org.junit.jupiter.api.Assertions.assertTrue(value);
+    static Stream<ClientException> cloudFailures() {
+        return Stream.of(new ClientException("InvalidAccessKeyId", "provider details"),
+                new ServerException("ServiceUnavailable", "provider details"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("cloudFailures")
+    void cloudFailure_returnsBusinessErrorWithoutExposingProviderDetails(ClientException failure) {
+        try (var clients = mockConstruction(DefaultAcsClient.class,
+                (client, context) -> when(client.getCommonResponse(any(CommonRequest.class))).thenThrow(failure))) {
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> service.sendVerificationCode("recipient@example.com"));
+
+            assertEquals("验证码邮件发送失败，请稍后重试", error.getMessage());
+            assertSame(failure, error.getCause());
+        }
     }
 }

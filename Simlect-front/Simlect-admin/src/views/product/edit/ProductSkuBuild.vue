@@ -20,6 +20,7 @@ const generateSkuList = () => {
 
     if (sku.price !== 0 || sku.stock !== 0) {
       existingSkuMap.set(hash, {
+        productId: sku.productId,
         price: sku.price,
         stock: sku.stock,
         propertyValueIds,

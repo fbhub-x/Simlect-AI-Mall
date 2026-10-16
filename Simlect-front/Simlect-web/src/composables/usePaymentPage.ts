@@ -10,6 +10,7 @@ import {
   markPaySuccess
 } from '@/utils/paySuccessSession';
 import { toast } from '@/utils/toast';
+import { confirmAction } from '@/utils/confirm';
 
 export type PaymentPageMode = 'mobile' | 'desktop';
 
@@ -23,9 +24,12 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
   const payHtml = ref('');
   const payLaunched = ref(false);
   const paySuccess = ref(false);
+  const isLocalMock = ref(false);
   const launching = ref(false);
   const reopening = ref(false);
   const checking = ref(false);
+  const confirming = ref(false);
+  const cancelling = ref(false);
   const loadError = ref('');
   const isProcessing = ref(false);
   let pollTimer: number | undefined;
@@ -109,6 +113,9 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
     launching.value = true;
     loadError.value = '';
     isProcessing.value = false;
+    isLocalMock.value = false;
+    payLaunched.value = false;
+    payHtml.value = '';
     try {
       if (await loadOrder()) return;
 
@@ -118,13 +125,17 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
       }
 
       const data = await orderApi.getPayInfo(payLookupId());
+      payAmount.value = resolvePayAmount(data?.amount, orderInfo.value);
+      if (data?.localMock === true) {
+        isLocalMock.value = true;
+        return;
+      }
       const html = data?.payInfo;
       if (!html) {
         loadError.value = '获取支付信息失败，请稍后重试';
         return;
       }
       payHtml.value = html;
-      payAmount.value = resolvePayAmount(data?.amount, orderInfo.value);
       if (!launchAlipay(html)) {
         loadError.value = isMobile ? '跳转支付宝失败，请点击重试' : '请允许弹窗后点击重试';
       }
@@ -163,6 +174,44 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
     router.replace('/');
   };
 
+  const confirmLocalPay = async () => {
+    if (!isLocalMock.value || paySuccess.value || confirming.value || cancelling.value) return;
+    confirming.value = true;
+    loadError.value = '';
+    try {
+      if (await redirectIfNotPayable()) return;
+      await orderApi.confirmLocalPay(payLookupId());
+      if (!(await loadOrder())) {
+        loadError.value = '测试付款状态未确认，请查看我的订单';
+      }
+    } catch (e: any) {
+      loadError.value = e?.info || '付款失败，请稍后重试';
+    } finally {
+      confirming.value = false;
+    }
+  };
+
+  const cancelPendingOrder = async () => {
+    if (paySuccess.value || confirming.value || cancelling.value) return;
+    const orderId = orderInfo.value?.orderId;
+    if (!orderId) return;
+    cancelling.value = true;
+    loadError.value = '';
+    try {
+      const ok = await confirmAction('取消后订单将关闭，确定要取消该订单吗？', {
+        title: '取消订单', confirmButtonText: '取消订单'
+      });
+      if (!ok) return;
+      await orderApi.cancelOrder(String(orderId));
+      toast.success('订单已取消');
+      goOrders();
+    } catch (e: any) {
+      loadError.value = e?.info || '取消订单失败，请稍后重试';
+    } finally {
+      cancelling.value = false;
+    }
+  };
+
   const checkPay = async () => {
     checking.value = true;
     try {
@@ -180,7 +229,7 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
   };
 
   const pollOrder = async () => {
-    if (paySuccess.value) return;
+    if (paySuccess.value || isLocalMock.value) return;
     try {
       const info = await orderApi.getOrderInfo(payOrderId());
       orderInfo.value = info;
@@ -219,7 +268,7 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
       }
       clearPaySuccess(currentPayOrderId);
     }
-    if (!paySuccess.value && !payLaunched.value) {
+    if (!paySuccess.value && !payLaunched.value && !isLocalMock.value) {
       if (await redirectIfNotPayable()) return;
       startPay();
     }
@@ -263,7 +312,7 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
     if (await redirectIfNotPayable()) return;
 
     await startPay();
-    pollTimer = window.setInterval(pollOrder, 4000);
+    if (!isLocalMock.value) pollTimer = window.setInterval(pollOrder, 4000);
     window.addEventListener('pageshow', onPageShow);
   });
 
@@ -278,9 +327,12 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
     payAmount,
     payLaunched,
     paySuccess,
+    isLocalMock,
     launching,
     reopening,
     checking,
+    confirming,
+    cancelling,
     loadError,
     isProcessing,
     payOrderId,
@@ -290,6 +342,8 @@ export function usePaymentPage(mode: PaymentPageMode = 'mobile') {
     reopenPayPage,
     goOrders,
     goHome,
-    checkPay
+    checkPay,
+    confirmLocalPay,
+    cancelPendingOrder
   };
 }

@@ -1,6 +1,7 @@
 package com.simlect.controller;
 
 import com.simlect.api.dto.PayInfoDTO;
+import com.simlect.api.dto.PayOrderNotifyDTO;
 import com.simlect.api.dto.PostOrderDTO;
 import com.simlect.api.enums.OrderCommentStatusEnum;
 import com.simlect.api.enums.OrderStatusEnum;
@@ -33,6 +34,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
@@ -61,10 +63,11 @@ class OrderControllerTest {
     private AuthCookieHelper authCookieHelper;
 
     private MockMvc mockMvc;
+    private OrderController controller;
 
     @BeforeEach
     void setUp() {
-        OrderController controller = new OrderController();
+        controller = new OrderController();
         ReflectionTestUtils.setField(controller, "orderInfoService", orderInfoService);
         ReflectionTestUtils.setField(controller, "orderItemService", orderItemService);
         ReflectionTestUtils.setField(controller, "orderLogisticsInfoService", orderLogisticsInfoService);
@@ -105,6 +108,98 @@ class OrderControllerTest {
         mockMvc.perform(post("/order/getPayInfo").param("orderId", ORDER_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.payOrderId").value(PAY_ORDER_ID));
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    private PayInfoDTO localPayInfo() {
+        PayInfoDTO info = new PayInfoDTO(null, PAY_ORDER_ID, new BigDecimal("12.50"));
+        info.setLocalMock(true);
+        return info;
+    }
+
+    @Test
+    void getPayInfo_localMode_doesNotCompletePayment() throws Exception {
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenReturn(localPayInfo());
+
+        mockMvc.perform(post("/order/getPayInfo").param("orderId", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.localMock").value(true));
+
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    @Test
+    void confirmLocalPay_completesPaymentWithServerAmount() throws Exception {
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenReturn(localPayInfo());
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID)
+                        .param("amount", "0.01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.data.localMock").value(true));
+
+        verify(orderInfoService).paySuccess(argThat(notify ->
+                PAY_ORDER_ID.equals(notify.getPayOrderId())
+                        && ("LOCAL-" + PAY_ORDER_ID).equals(notify.getChannelOrderId())
+                        && new BigDecimal("12.50").equals(notify.getTotalAmount())));
+    }
+
+    @Test
+    void confirmLocalPay_clientCannotEnableLocalMode() throws Exception {
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID))
+                .thenReturn(new PayInfoDTO("payment-form", PAY_ORDER_ID, BigDecimal.TEN));
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID)
+                        .param("localMock", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("error"));
+
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    @Test
+    void confirmLocalPay_productionRejectsPayment() throws Exception {
+        ReflectionTestUtils.setField(controller, "productionReady", true);
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenReturn(localPayInfo());
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("error"))
+                .andExpect(jsonPath("$.info").value("生产环境不支持模拟付款"));
+
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    @Test
+    void confirmLocalPay_missingAmountDoesNotCompletePayment() throws Exception {
+        PayInfoDTO info = localPayInfo();
+        info.setAmount(null);
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenReturn(info);
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID))
+                .andExpect(jsonPath("$.status").value("error"));
+
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    @Test
+    void confirmLocalPay_otherUsersOrderCannotCompletePayment() throws Exception {
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenThrow(new BusinessException("订单不存在"));
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID))
+                .andExpect(jsonPath("$.status").value("error"));
+
+        verify(orderInfoService, never()).paySuccess(any());
+    }
+
+    @Test
+    void confirmLocalPay_paymentFailure_isReturnedAsFailure() throws Exception {
+        when(orderInfoService.getPayInfo(USER_ID, ORDER_ID)).thenReturn(localPayInfo());
+        doThrow(new BusinessException("支付成功处理失败")).when(orderInfoService).paySuccess(any(PayOrderNotifyDTO.class));
+
+        mockMvc.perform(post("/order/confirmLocalPay").param("orderId", ORDER_ID))
+                .andExpect(jsonPath("$.status").value("error"))
+                .andExpect(jsonPath("$.info").value("支付成功处理失败"));
     }
 
     @Test

@@ -7,7 +7,7 @@
       <!-- [zh] 开始标签 `<h3>` -->
       <h3 class="block-title">SKU 列表</h3>
       <!-- [zh] 开始标签 `<p>` -->
-      <p class="block-desc">为每个规格组合设置价格与库存</p>
+      <p class="block-desc">{{ showType === 1 ? '按规格增加或减少可售库存' : '为每个规格组合设置价格与库存；已有 SKU 请在商品列表中更新库存' }}</p>
 
       <!-- [zh] 开始标签 `<div>` -->
       <div v-if="productEditStore.skuList.length" class="sku-mobile-list">
@@ -23,7 +23,7 @@
             <span class="sku-index">SKU #{{ index + 1 }}</span>
             <!-- [zh] 开始标签 `<button>` -->
             <button
-              v-if="productEditStore.skuList.length > 1"
+              v-if="showType === 0 && productEditStore.skuList.length > 1"
               type="button"
               class="op-btn sm danger"
               @click="removeSku(index)"
@@ -55,21 +55,33 @@
             <!-- [zh] 开始标签 `<label>` -->
             <label>售价（元）</label>
             <!-- [zh] 开始标签 `<el-input-number>` -->
-            <el-input-number v-model="row.price" :min="0" :precision="2" :step="1" style="width: 100%" />
+            <el-input-number v-model="row.price" :min="0" :precision="2" :step="1" :disabled="showType === 1" style="width: 100%" />
           <!-- [zh] 闭合标签 `</div>` -->
           </div>
           <!-- [zh] 开始标签 `<div>` -->
           <div class="sku-field">
             <!-- [zh] 开始标签 `<label>` -->
-            <label>库存</label>
+            <label>{{ showType === 1 ? '当前库存' : '库存' }}</label>
+            <span v-if="showType === 1">{{ row.stock }}</span>
             <!-- [zh] 开始标签 `<el-input-number>` -->
             <el-input-number
+              v-else
               v-model="row.stock"
               :min="0"
+              :precision="0"
               style="width: 100%"
-              :disabled="route.params.productId != null"
+              :disabled="!!row.productId"
             />
           <!-- [zh] 闭合标签 `</div>` -->
+          </div>
+          <div v-if="showType === 1" class="sku-field">
+            <label>库存增减</label>
+            <el-radio-group v-model="row.stockUpdateType" :disabled="row.updating">
+              <el-radio-button label="增加" value="1" />
+              <el-radio-button label="减少" value="-1" />
+            </el-radio-group>
+            <el-input-number v-model="row.changeStock" :min="1" :max="2147483647" :precision="0" :disabled="row.updating" placeholder="请输入数量" style="width: 100%" />
+            <el-button type="primary" :loading="row.updating" @click="updateSkuStock(row)">确认更新库存</el-button>
           </div>
         <!-- [zh] 闭合标签 `</div>` -->
         </div>
@@ -129,15 +141,16 @@
         <el-input-number
           v-model="row.stock"
           :min="0"
+          :precision="0"
           placeholder="库存"
           :style="{ width: '130px' }"
-          :disabled="route.params.productId != null"
+          :disabled="!!row.productId"
           v-if="showType === 0"
         ></el-input-number>
         <!-- [zh] 开始标签 `<div>` -->
         <div class="stock-update-panel" v-if="showType === 1">
           <!-- [zh] 开始标签 `<el-radio-group>` -->
-          <el-radio-group v-model="row.stockUpdateType" fill="#F00033">
+          <el-radio-group v-model="row.stockUpdateType" fill="#F00033" :disabled="row.updating">
             <!-- [zh] 开始标签 `<el-radio-button>` -->
             <el-radio-button label="增加" value="1" />
             <!-- [zh] 开始标签 `<el-radio-button>` -->
@@ -145,9 +158,9 @@
           <!-- [zh] 闭合标签 `</el-radio-group>` -->
           </el-radio-group>
           <!-- [zh] 开始标签 `<el-input>` -->
-          <el-input clearable placeholder="请输入数量" v-model="row.changeStock" class="stock-input"></el-input>
+          <el-input clearable placeholder="请输入数量" v-model="row.changeStock" :disabled="row.updating" class="stock-input"></el-input>
           <!-- [zh] 开始标签 `<el-button>` -->
-          <el-button type="primary" @click="updateSkuStock(row)">确定</el-button>
+          <el-button type="primary" :loading="row.updating" @click="updateSkuStock(row)">确定</el-button>
         <!-- [zh] 闭合标签 `</div>` -->
         </div>
       </template>
@@ -193,39 +206,58 @@ const removeSku = (index) => {
 }
 
 const updateSkuStock = async (row) => {
+  if (row.updating) return
   if (!row.stockUpdateType) {
     proxy.Message.warning('请选择库存增减类型（增加/减少）')
     return
   }
-  if (!row.changeStock || !proxy.Verify.checkNumber(row.changeStock)) {
-    proxy.Message.warning('请输入正确的库存数量')
+  const amount = Number(row.changeStock)
+  if (!Number.isInteger(amount) || amount <= 0 || amount > 2147483647) {
+    proxy.Message.warning('库存数量必须是大于 0 的整数，且不能超过 2147483647')
     return
   }
-  proxy.ConfirmSensitive({
-    message: `确定要${row.stockUpdateType > 0 ? '增加' : '减少'}库存 ${row.changeStock} 吗？`,
-    okfun: async (sensitiveConfirmToken) => {
-      let result = await proxy.Request({
-        url: proxy.Api.updateSkuStock,
-        sensitiveConfirmToken,
-        params: {
-          productId: row.productId,
-          propertyValueIdHash: row.propertyValueIdHash,
-          changeStock: row.stockUpdateType * row.changeStock,
-        },
-      })
-      if (!result) {
-        return
-      }
-      row.stock = row.stock + row.stockUpdateType * row.changeStock
-      proxy.Message.success('库存更新成功')
-      mitter.emit('updateStockCallback', {
-        productId: row.productId,
-        totalStock: productEditStore.skuList.reduce((sum, item) => sum + item.stock, 0),
-      })
-      row.stockUpdateType = null
-      row.changeStock = null
-    },
-  })
+  const changeStock = Number(row.stockUpdateType) * amount
+  row.updating = true
+  try {
+    await proxy.ConfirmSensitive({
+      message: `确定要${changeStock > 0 ? '增加' : '减少'}库存 ${amount} 吗？`,
+      url: proxy.Api.updateSkuStock,
+      okfun: async (sensitiveConfirmToken) => {
+        const result = await proxy.Request({
+          url: proxy.Api.updateSkuStock,
+          sensitiveConfirmToken,
+          params: {
+            productId: row.productId,
+            propertyValueIdHash: row.propertyValueIdHash,
+            changeStock,
+          },
+        })
+        if (!result) return
+        row.stock = Number(row.stock) + changeStock
+        proxy.Message.success('库存更新成功')
+        row.stockUpdateType = null
+        row.changeStock = null
+        // 重新读取所有 SKU，避免并发下单或只展示部分 SKU 时总库存失真。
+        const latest = await proxy.Request({
+          url: proxy.Api.getProductInfo,
+          params: { productId: row.productId },
+          showLoading: false,
+        })
+        if (latest) {
+          const stocks = new Map(latest.data.skuList.map((sku) => [sku.propertyValueIdHash, sku.stock]))
+          for (const sku of productEditStore.skuList) {
+            if (stocks.has(sku.propertyValueIdHash)) sku.stock = stocks.get(sku.propertyValueIdHash)
+          }
+          mitter.emit('updateStockCallback', {
+            productId: row.productId,
+            totalStock: latest.data.skuList.reduce((sum, sku) => sum + Number(sku.stock), 0),
+          })
+        }
+      },
+    })
+  } finally {
+    row.updating = false
+  }
 }
 </script>
 

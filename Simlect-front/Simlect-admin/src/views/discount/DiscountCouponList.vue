@@ -482,6 +482,7 @@ const loadDataList = async () => {
 const toggleStatus = (row) => {
   proxy.ConfirmSensitive({
     message: `确定要【${row.status == 0 ? '启用' : '停用'}】吗？`,
+    url: proxy.Api.updateDiscountCouponStatus,
     okfun: async (sensitiveConfirmToken) => {
       let result = await proxy.Request({
         url: proxy.Api.updateDiscountCouponStatus,

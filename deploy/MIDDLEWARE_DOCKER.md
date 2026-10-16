@@ -14,6 +14,7 @@ $mysql = { param($f) Get-Content $f -Raw -Encoding UTF8 | docker exec -i simlect
 & $mysql .\sql\00b_nacos_seata_databases.sql
 & $mysql .\sql\14_nacos.sql
 & $mysql .\sql\15_seata.sql
+& $mysql .\sql\20_seata_lock_key_capacity.sql
 & $mysql .\sql\16_seata_undo_log.sql
 # 再按 GO_LIVE 执行 01…10、13
 ```
@@ -58,6 +59,7 @@ docker compose -f docker-compose.middleware.yml ps
 - 客户端 `tx-service-group`: `simlect_tx_group` → `127.0.0.1:8091`（file registry + grouplist）
 - 下单入口：`OrderInfoServiceImpl.postOrder` 使用 `@GlobalTransactional`
 - 业务库 `undo_log`：`simlect_order` / `simlect_stock` / `simlect_coupon` / `simlect_cart` / `simlect_pay`（`sql/16_seata_undo_log.sql`）
+- 已有数据库需执行 `sql/20_seata_lock_key_capacity.sql`，将 `seata.lock_table.pk` 至少扩到 128、`row_key` 至少扩到 512；库存幂等键会超过原来的 36 字符限制。`init-mysql-meta.ps1` 已包含此升级。
 
 ## 业务侧环境变量（补充）
 

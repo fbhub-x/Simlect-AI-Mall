@@ -83,7 +83,7 @@ aliyun:
   access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
   access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
   directmail:
-    account-name: ${ALIYUN_DM_ACCOUNT_NAME:simlect@simlect.com}
+    account-name: ${ALIYUN_DM_ACCOUNT_NAME:}
     reply-to-address: ${ALIYUN_DM_REPLY_TO_ADDRESS:false}
 
 simlect:

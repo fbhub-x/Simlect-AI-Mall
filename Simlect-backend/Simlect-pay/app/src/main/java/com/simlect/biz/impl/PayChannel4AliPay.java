@@ -72,7 +72,9 @@ public class PayChannel4AliPay implements PayChannel {
             BigDecimal payAmount = OrderPayAmountUtil.normalizeChannelPayAmount(amount);
             log.info("本地支付占位模式：跳过支付宝下单 payOrderId={}, scene={}, amount={}",
                     payOrderId, payChannelEnum, payAmount);
-            return new PayInfoDTO(null, payOrderId, payAmount);
+            PayInfoDTO result = new PayInfoDTO(null, payOrderId, payAmount);
+            result.setLocalMock(true);
+            return result;
         }
         try {
             BigDecimal payAmount = OrderPayAmountUtil.normalizeChannelPayAmount(amount);

@@ -34,7 +34,12 @@ public class SkuStockService {
 
     @Transactional(rollbackFor = Exception.class)
     public int changeStock(SkuStockChangeDTO dto) {
-        int affected = skuStockMapper.changeStock(dto.getProductId(), dto.getPropertyValueIdHash(), dto.getChangeAmount());
+        if (dto == null || dto.getChangeAmount() == null || dto.getChangeAmount() == 0) {
+            throw new BusinessException("库存增减数量不能为0");
+        }
+        int affected = dto.getChangeAmount() > 0
+                ? skuStockMapper.increaseStock(dto.getProductId(), dto.getPropertyValueIdHash(), dto.getChangeAmount())
+                : skuStockMapper.changeStock(dto.getProductId(), dto.getPropertyValueIdHash(), dto.getChangeAmount());
         if (affected <= 0) {
             throw new BusinessException("库存不足");
         }

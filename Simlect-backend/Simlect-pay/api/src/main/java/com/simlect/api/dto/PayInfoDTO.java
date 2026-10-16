@@ -8,6 +8,7 @@ public class PayInfoDTO {
 
     private String orderId;
     private BigDecimal amount;
+    private boolean localMock;
 
     public PayInfoDTO(String payInfo, String payOrderId, BigDecimal amount) {
         this.payInfo = payInfo;
@@ -48,5 +49,13 @@ public class PayInfoDTO {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public boolean isLocalMock() {
+        return localMock;
+    }
+
+    public void setLocalMock(boolean localMock) {
+        this.localMock = localMock;
     }
 }

@@ -4,6 +4,7 @@ import com.simlect.annotation.GlobalInterceptor;
 import com.simlect.component.RedisComponent;
 import com.simlect.constants.Constants;
 import com.simlect.api.dto.PayInfoDTO;
+import com.simlect.api.dto.PayOrderNotifyDTO;
 import com.simlect.api.dto.PostOrderDTO;
 import com.simlect.entity.dto.TokenUserInfoDTO;
 import com.simlect.api.enums.OrderCommentStatusEnum;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 
@@ -50,6 +52,9 @@ public class OrderController extends ABaseController{
     @Resource
     private OrderLogisticsInfoService orderLogisticsInfoService;
 
+    @Value("${simlect.production-ready:false}")
+    private boolean productionReady;
+
     // 提交订单
     @PostMapping("/postOrder")
     @GlobalInterceptor(checkLogin = true)
@@ -64,6 +69,28 @@ public class OrderController extends ABaseController{
     @GlobalInterceptor(checkLogin = true)
     public ResponseVO getPayInfo(@NotEmpty String orderId){
         PayInfoDTO payInfoDTO = orderInfoService.getPayInfo(getTokenUserInfo().getUserId(),orderId);
+        return getSuccessResponseVO(payInfoDTO);
+    }
+
+    @PostMapping("/confirmLocalPay")
+    @GlobalInterceptor(checkLogin = true)
+    public ResponseVO confirmLocalPay(@NotEmpty String orderId) {
+        if (productionReady) {
+            throw new BusinessException("生产环境不支持模拟付款");
+        }
+        PayInfoDTO payInfoDTO = orderInfoService.getPayInfo(getTokenUserInfo().getUserId(), orderId);
+        if (payInfoDTO == null || !payInfoDTO.isLocalMock()) {
+            throw new BusinessException("当前未启用本地测试付款");
+        }
+        // 模式和金额由支付服务返回；订单归属已由 getPayInfo 校验，客户端不能指定模拟付款。
+        // 通过服务代理复用支付成功事务、状态机和幂等处理，不再次扣减下单时已扣的库存。
+        if (StringTools.isEmpty(payInfoDTO.getPayOrderId()) || payInfoDTO.getAmount() == null) {
+            throw new BusinessException("测试付款信息不完整，请重试");
+        }
+        PayOrderNotifyDTO notify = new PayOrderNotifyDTO(
+                payInfoDTO.getPayOrderId(), "LOCAL-" + payInfoDTO.getPayOrderId());
+        notify.setTotalAmount(payInfoDTO.getAmount());
+        orderInfoService.paySuccess(notify);
         return getSuccessResponseVO(payInfoDTO);
     }
 

@@ -285,6 +285,7 @@ const reload = () => loadList(true)
 const toggleStatus = (row) => {
   proxy.ConfirmSensitive({
     message: `确定要${row.status == 0 ? '启用' : '停用'}「${row.couponName}」吗？`,
+    url: proxy.Api.updateDiscountCouponStatus,
     okfun: async (sensitiveConfirmToken) => {
       const result = await proxy.Request({
         url: proxy.Api.updateDiscountCouponStatus,

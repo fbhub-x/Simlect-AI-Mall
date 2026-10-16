@@ -15,6 +15,10 @@ public interface SkuStockMapper {
                     @Param("propertyValueIdHash") String propertyValueIdHash,
                     @Param("changeAmount") Integer changeAmount);
 
+    int increaseStock(@Param("productId") String productId,
+                      @Param("propertyValueIdHash") String propertyValueIdHash,
+                      @Param("changeAmount") Integer changeAmount);
+
     Integer selectTotalStockByProductId(@Param("productId") String productId);
 
     int upsert(@Param("productId") String productId,

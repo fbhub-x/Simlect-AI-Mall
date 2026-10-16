@@ -21,6 +21,7 @@ mvn -q package -DskipTests
 00_create_databases.sql
 00b_nacos_seata_databases.sql   # 首次：nacos / seata 库
 14_nacos.sql / 15_seata.sql / 16_seata_undo_log.sql
+20_seata_lock_key_capacity.sql   # 已有库升级 Seata 锁字段，支持库存幂等键
 01_user.sql … 10_admin.sql
 13_mq_infra_per_service.sql   # user/product/search Outbox + mq_compensation_log
 ```

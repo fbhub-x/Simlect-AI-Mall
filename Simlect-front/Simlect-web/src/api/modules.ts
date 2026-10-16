@@ -66,6 +66,7 @@ export const cartApi = {
 export const orderApi = {
   postOrder: (payload: Record<string, unknown>) => request.post('/order/postOrder', payload),
   getPayInfo: (orderId: string) => request.postForm('/order/getPayInfo', { orderId }),
+  confirmLocalPay: (orderId: string) => request.postForm('/order/confirmLocalPay', { orderId }),
   getOrderInfo: (payOrderId: string) => request.postForm('/order/getOrderInfo', { payOrderId }),
   loadMyOrder: (params: Record<string, unknown>) => request.postForm('/order/loadMyOrder', params),
   cancelOrder: (orderId: string) => request.postForm('/order/cancelOrder', { orderId }),

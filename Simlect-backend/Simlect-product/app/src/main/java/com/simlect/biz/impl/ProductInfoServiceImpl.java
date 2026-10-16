@@ -181,6 +181,9 @@ public class ProductInfoServiceImpl implements ProductInfoService {
 			productPropertyValue.setProductId(productInfo.getProductId());
 		}
 		for (ProductSku productSku : productSkuList) {
+			if (productSku.getStock() != null && productSku.getStock() < 0) {
+				throw new BusinessException("库存最低为0");
+			}
 			productSku.setProductId(productInfo.getProductId());
 		}
 		productInfo.setStatus(null);
@@ -197,6 +200,7 @@ public class ProductInfoServiceImpl implements ProductInfoService {
 			productInfoMapper.insert(productInfo);
 			productPropertyValueMapper.insertBatch(productPropertyList);
 			productSkuMapper.insertBatch(productSkuList);
+			initializeSkuStock(productSkuList);
 			productBloomFilterComponent.add(productInfo.getProductId());
 		}// 否则为修改
 		 else{
@@ -233,6 +237,7 @@ public class ProductInfoServiceImpl implements ProductInfoService {
 			CollectionCompare.CompareResult<ProductSku> compareResult4Sku = new CollectionCompare<ProductSku>().compare(dbSkuList, productSkuList, ProductSku::getPropertyValueIdHash);
 			if (compareResult4Sku.addList != null && !compareResult4Sku.addList.isEmpty()){
 				productSkuMapper.insertBatch(compareResult4Sku.addList);
+				initializeSkuStock(compareResult4Sku.addList);
 			}
 			if (compareResult4Sku.updateList != null && !compareResult4Sku.updateList.isEmpty()){
 				productSkuMapper.updateBatch(productInfo.getProductId(),compareResult4Sku.updateList);
@@ -260,6 +265,14 @@ public class ProductInfoServiceImpl implements ProductInfoService {
 						MessageReliabilityLevelEnum.HIGH);
 			}
 		});
+	}
+
+	private void initializeSkuStock(List<ProductSku> skuList) {
+		// 库存已迁至独立服务：仅新 SKU 写入初始值，编辑商品不覆盖已有可售库存。
+		for (ProductSku sku : skuList) {
+			stockFeignSupport.setStock(sku.getProductId(), sku.getPropertyValueIdHash(),
+					sku.getStock() == null ? 0 : sku.getStock());
+		}
 	}
 
 	@Override

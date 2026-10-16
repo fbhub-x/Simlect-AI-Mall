@@ -219,6 +219,27 @@ class OrderInfoServiceImplTest {
     }
 
     @Test
+    void paySuccess_localPayment_isIdempotentAndTimeoutDoesNotRestock() {
+        when(orderInfoMapper.selectList(any(OrderInfoQuery.class))).thenReturn(List.of(waitPayOrder));
+        when(orderInfoMapper.selectByOrderId(ORDER_ID)).thenReturn(waitPayOrder);
+        when(orderLogisticsInfoMapper.selectByOrderId(ORDER_ID)).thenReturn(logistics());
+        when(orderInfoMapper.updateByParam(any(OrderInfo.class), any(OrderInfoQuery.class))).thenReturn(1);
+        PayOrderNotifyDTO localPayment = new PayOrderNotifyDTO(PAY_ORDER_ID, "LOCAL-" + PAY_ORDER_ID);
+        localPayment.setTotalAmount(new BigDecimal("100.00"));
+
+        service.paySuccess(localPayment);
+        service.paySuccess(localPayment);
+        assertTrue(service.cancelUnpaidOrderForPayTimeout(ORDER_ID));
+
+        assertEquals(OrderStatusEnum.PAID.getStatus(), waitPayOrder.getOrderStatus());
+        verify(orderInfoMapper, times(1)).updateByParam(any(OrderInfo.class), any(OrderInfoQuery.class));
+        verify(payFeignSupport, times(1)).markSuccess(PAY_ORDER_ID, "LOCAL-" + PAY_ORDER_ID);
+        verify(transactionalMqSender, times(1)).sendAfterCommit(eq(RabbitMQConfig.PAY_EXCHANGE),
+                eq(RabbitMQConfig.PAY_LOGISTICS_DELAY_KEY), any(PayOrderMessageDTO.class), anyString(), any());
+        verifyNoInteractions(stockFeignSupport);
+    }
+
+    @Test
     void paySuccess_usesCoupon_whenRelLocked() {
         when(orderInfoMapper.selectList(any(OrderInfoQuery.class))).thenReturn(List.of(waitPayOrder));
         when(redisComponent.isPayOrderCloseMarked(PAY_ORDER_ID)).thenReturn(false);
@@ -1645,6 +1666,9 @@ verify(payFeignSupport, never()).markSuccess(anyString(), anyString());
         verify(orderInfoMapper).insertBatch(ordersCaptor.capture());
         assertEquals(new BigDecimal("195.00"), ordersCaptor.getValue().get(0).getAmount());
         verify(payFeignSupport).getPayUrl(eq("alipay_pc"), anyString(), anyString(), eq(new BigDecimal("195.00")));
+        verify(stockFeignSupport).changeStockBatchIdempotent(
+                argThat(items -> items.size() == 1 && items.get(0).getBuyCount() == -2),
+                startsWith("order-create-deduct:"));
         verify(payFeignSupport).createPending(eq(USER_ID), anyString(), anyString(),
                 eq(new BigDecimal("195.00")), eq("alipay_pc"));
         verify(transactionalMqSender).sendAfterCommit(eq(RabbitMQConfig.PAY_EXCHANGE),

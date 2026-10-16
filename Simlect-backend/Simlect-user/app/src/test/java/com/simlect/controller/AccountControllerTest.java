@@ -361,6 +361,24 @@ class AccountControllerTest {
     }
 
     @Test
+    void getEmailCode_unconfiguredMail_returnsActionableErrorWithoutSavingCode() throws Exception {
+        stubEmailRateLimitFirstHit();
+        doNothing().when(slideCaptchaVerifier).verify(anyString());
+        when(redisComponent.getEmailCode("a@b.com")).thenReturn(null);
+        when(aliEmailServiceImpl.sendVerificationCode("a@b.com"))
+                .thenThrow(new com.simlect.exception.BusinessException("邮件发送服务未配置，请联系管理员"));
+
+        mockMvc.perform(post("/account/getEmailCode")
+                        .param("email", "a@b.com")
+                        .param("captchaVerification", "v"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("error"))
+                .andExpect(jsonPath("$.info").value("邮件发送服务未配置，请联系管理员"));
+
+        verify(redisComponent, never()).saveEmailCode(anyString(), anyString());
+    }
+
+    @Test
     void getEmailCode_sendsNewCode() throws Exception {
         stubEmailRateLimitFirstHit();
         doNothing().when(slideCaptchaVerifier).verify(anyString());

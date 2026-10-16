@@ -234,6 +234,7 @@ const changeStatus = (row) => {
   }
   proxy.ConfirmSensitive({
     message: `确定要【${row.status == 0 ? '上架' : '下架'}】该商品吗？`,
+    url: proxy.Api.updateProductStatus,
     okfun: async (sensitiveConfirmToken) => {
       const result = await proxy.Request({
         url: proxy.Api.updateProductStatus,
@@ -277,6 +278,7 @@ const del = (row) => {
   }
   proxy.ConfirmSensitive({
     message: `确定要删除【${row.productName}】吗？`,
+    url: proxy.Api.deleteProduct,
     okfun: async (sensitiveConfirmToken) => {
       const result = await proxy.Request({
         url: proxy.Api.deleteProduct,

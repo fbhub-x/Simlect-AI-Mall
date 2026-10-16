@@ -50,9 +50,7 @@ const getProductInfo = async (productId, propertyValueIdHash) => {
 }
 
 const reset = () => {
-  productEditStore.productPropertyList = []
-  productEditStore.skuList = []
-  productEditStore.skuData = new Map()
+  productEditStore.resetSkuState()
 }
 
 const show = async (productId, propertyValueIdHash) => {

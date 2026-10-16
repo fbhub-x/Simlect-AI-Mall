@@ -1,4 +1,4 @@
--- Seata Server storeMode=db（官方 apache/incubator-seata script/server/db/mysql.sql）
+-- Seata Server storeMode=db（基于官方脚本，锁字段按项目业务主键长度扩容）
 USE seata;
 
 CREATE TABLE IF NOT EXISTS `global_table`
@@ -38,13 +38,13 @@ CREATE TABLE IF NOT EXISTS `branch_table`
 
 CREATE TABLE IF NOT EXISTS `lock_table`
 (
-    `row_key`        VARCHAR(128) NOT NULL,
+    `row_key`        VARCHAR(512) NOT NULL,
     `xid`            VARCHAR(128),
     `transaction_id` BIGINT,
     `branch_id`      BIGINT       NOT NULL,
     `resource_id`    VARCHAR(256),
     `table_name`     VARCHAR(32),
-    `pk`             VARCHAR(36),
+    `pk`             VARCHAR(128),
     `status`         TINYINT      NOT NULL DEFAULT '0' COMMENT '0:locked ,1:rollbacking',
     `gmt_create`     DATETIME,
     `gmt_modified`   DATETIME,

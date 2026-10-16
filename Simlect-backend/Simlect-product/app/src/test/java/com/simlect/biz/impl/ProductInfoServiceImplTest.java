@@ -145,6 +145,7 @@ class ProductInfoServiceImplTest {
         product.setStatus(ProductStatusEnum.ON_SALE.getStatus());
         dto.setProductInfo(product);
         ProductSku skuLow = buildSku("h1", "10.00");
+        skuLow.setStock(25);
         ProductSku skuHigh = buildSku("h2", "99.00");
         dto.setSkuList(new ArrayList<>(List.of(skuLow, skuHigh)));
         ProductPropertyValue property = new ProductPropertyValue();
@@ -161,6 +162,8 @@ class ProductInfoServiceImplTest {
         verify(productInfoMapper).insert(product);
         verify(productPropertyValueMapper).insertBatch(List.of(property));
         verify(productSkuMapper).insertBatch(anyList());
+        verify(stockFeignSupport).setStock(product.getProductId(), "h1", 25);
+        verify(stockFeignSupport).setStock(product.getProductId(), "h2", 0);
         verify(productBloomFilterComponent).add(product.getProductId());
         verify(reliableMessageSender).sendMessage(eq(RabbitMQConfig.RAG_EXCHANGE),
                 eq(RabbitMQConfig.RAG_QUEUE_KEY), any(), anyString(), any());
@@ -184,6 +187,57 @@ class ProductInfoServiceImplTest {
         verify(productSkuMapper, never()).insertBatch(anyList());
         verify(reliableMessageSender).sendMessage(eq(RabbitMQConfig.RAG_EXCHANGE),
                 eq(RabbitMQConfig.RAG_QUEUE_KEY), any(), anyString(), any());
+    }
+
+    @Test
+    void saveProduct_update_initializesOnlyNewSkuWithoutOverwritingExistingStock() {
+        ProductSaveDTO dto = new ProductSaveDTO();
+        dto.setProductInfo(buildProduct());
+        dto.setProductPropertyList(new ArrayList<>());
+        ProductSku existing = buildSku("h1", "12.00");
+        existing.setStock(999); // 浏览器中的旧库存值不能覆盖实际可售库存。
+        ProductSku added = buildSku("h2", "20.00");
+        added.setStock(30);
+        dto.setSkuList(new ArrayList<>(List.of(existing, added)));
+        when(productPropertyValueMapper.selectList(any())).thenReturn(new ArrayList<>());
+        when(productSkuMapper.selectList(any())).thenReturn(List.of(buildSku("h1", "10.00")));
+
+        productInfoService.saveProduct(dto);
+
+        verify(stockFeignSupport).setStock("P1", "h2", 30);
+        verify(stockFeignSupport, never()).setStock(eq("P1"), eq("h1"), anyInt());
+    }
+
+    @Test
+    void saveProduct_negativeInitialStock_rejectsBeforeSaving() {
+        ProductSaveDTO dto = new ProductSaveDTO();
+        ProductInfo product = buildProduct();
+        product.setProductId(null);
+        dto.setProductInfo(product);
+        dto.setProductPropertyList(new ArrayList<>());
+        ProductSku sku = buildSku("h1", "10.00");
+        sku.setStock(-1);
+        dto.setSkuList(List.of(sku));
+
+        assertThrows(BusinessException.class, () -> productInfoService.saveProduct(dto));
+
+        verifyNoInteractions(productInfoMapper, productSkuMapper, stockFeignSupport);
+    }
+
+    @Test
+    void saveProduct_stockServiceFailure_isPropagated() {
+        ProductSaveDTO dto = new ProductSaveDTO();
+        ProductInfo product = buildProduct();
+        product.setProductId(null);
+        dto.setProductInfo(product);
+        dto.setProductPropertyList(new ArrayList<>());
+        dto.setSkuList(List.of(buildSku("h1", "10.00")));
+        doThrow(new BusinessException("库存服务暂不可用"))
+                .when(stockFeignSupport).setStock(anyString(), eq("h1"), eq(0));
+
+        assertThrows(BusinessException.class, () -> productInfoService.saveProduct(dto));
+
+        verifyNoInteractions(reliableMessageSender);
     }
 
     @Test

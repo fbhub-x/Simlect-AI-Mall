@@ -72,6 +72,25 @@ mvn -q spring-boot:run
 
 等 Nacos 里实例都 UP 后再开前端。
 
+邮箱验证码还需在 IDEA 的 `UserApplication` 运行配置 → 环境变量中设置：
+
+```text
+ALIYUN_ACCESS_KEY_ID=你的阿里云AccessKeyId
+ALIYUN_ACCESS_KEY_SECRET=你的阿里云AccessKeySecret
+ALIYUN_DM_ACCOUNT_NAME=你在阿里云邮件推送中配置的发信地址
+```
+
+设置后重启 `UserApplication`。这些变量由用户服务读取，前端的 `.env` 不会传给 Java 进程；
+`deploy/env.production.example` 仅是模板，不会自动加载到 IDEA。密钥请保存在本机环境变量或本地运行配置中。
+
+支付本地联调时，可在 `PayApplication` 中设置 `SIMLECT_PAY_LOCAL_MOCK_ENABLED=true`。
+该模式下提交订单后保持“待支付”，支付页提供“确认付款”“取消订单”和“稍后支付”。
+只有点击“确认付款”才会复用支付成功流程更新订单和支付记录，并显示“支付成功”；不会实际扣款。
+商品库存仍在下单时扣减，模拟付款不会重复扣库存；已支付订单不会被未支付超时关单回补。
+`SIMLECT_PRODUCTION_READY=true` 时禁止模拟付款。
+测试完整支付宝付款流程时，需关闭此开关并配置对应应用的 `ALIPAY_*` 参数及 `PROJECT_DOMAIN`。
+支付模式响应字段有变更时，重新编译并重启 `PayApplication` 和 `OrderApplication`，然后刷新商城页面。
+
 ---
 
 ## 三、前端

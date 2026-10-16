@@ -66,7 +66,7 @@
           <!-- [zh] 开始标签 `<h2>` -->
           <h2>支付成功</h2>
           <!-- [zh] 开始标签 `<p>` -->
-          <p>订单已支付，可在「我的订单」查看详情与物流信息。</p>
+          <p>{{ isLocalMock ? '测试付款已完成，未实际扣款。可在「我的订单」查看详情与物流信息。' : '订单已支付，可在「我的订单」查看详情与物流信息。' }}</p>
           <!-- [zh] 开始标签 `<div>` -->
           <div class="result-actions">
             <!-- [zh] 开始标签 `<el-button>` -->
@@ -79,6 +79,16 @@
         </div>
 
         <!-- [zh] 开始标签 `<div>` -->
+        <div v-else-if="isLocalMock" class="result-card pending">
+          <h2>待支付</h2>
+          <p>订单已提交，点击「确认付款」完成测试付款，也可以取消订单。</p>
+          <p v-if="loadError" role="alert">{{ loadError }}</p>
+          <div class="result-actions">
+            <el-button type="primary" size="large" :loading="confirming" :disabled="cancelling" @click="confirmLocalPay">确认付款</el-button>
+            <el-button size="large" :loading="cancelling" :disabled="confirming" @click="cancelPendingOrder">取消订单</el-button>
+            <el-button size="large" :disabled="confirming || cancelling" @click="goOrders">稍后支付</el-button>
+          </div>
+        </div>
         <div v-else-if="payLaunched" class="result-card pending">
           <!-- [zh] 开始标签 `<h2>` -->
           <h2>请在支付宝页面完成支付</h2>
@@ -145,7 +155,7 @@
       </section>
 
       <!-- [zh] 开始标签 `<aside>` -->
-      <aside class="pc-payment-aside">
+      <aside v-if="!isLocalMock" class="pc-payment-aside">
         <!-- [zh] 开始标签 `<div>` -->
         <div class="aside-card">
           <!-- [zh] 开始标签 `<h2>` -->
@@ -189,9 +199,12 @@ const {
   payAmount,
   payLaunched,
   paySuccess,
+  isLocalMock,
   launching,
   reopening,
   checking,
+  confirming,
+  cancelling,
   loadError,
   isProcessing,
   payOrderId,
@@ -201,7 +214,9 @@ const {
   reopenPayPage,
   goOrders,
   goHome,
-  checkPay
+  checkPay,
+  confirmLocalPay,
+  cancelPendingOrder
 } = usePaymentPage('desktop');
 </script>
 
