@@ -5,7 +5,8 @@ from langchain_openai import ChatOpenAI  # import statement — OpenAI 兼容聊
 from app.config.settings import Settings, get_settings  # import statement — 配置类与获取方法
 
 def create_chat_llm() -> ChatOpenAI:  # 工厂方法 — 类似 Java static factory createChatLlm()
-
+    extra_body = {"thinking": {"type": "disabled"}},
+    use_responses_api = False,
     s = get_settings()  # 读取全局配置 — 类似 @Value 注入
     return ChatOpenAI(  # 构造流式对话 LLM
         api_key=s.llm_api_key,
@@ -17,6 +18,8 @@ def create_chat_llm() -> ChatOpenAI:  # 工厂方法 — 类似 Java static fact
 
 def create_memory_llm() -> ChatOpenAI:  # 工厂方法 — 创建记忆压缩专用 LLM
 
+    extra_body = {"thinking": {"type": "disabled"}},
+    use_responses_api = False,
     s = get_settings()
     api_key, base_url, model, timeout = _resolve_memory_llm_config(s)  # 元组解包 — 类似 Java 多返回值需封装对象
     return ChatOpenAI(
