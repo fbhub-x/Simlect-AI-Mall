@@ -21,9 +21,9 @@
     <!-- [zh] 开始标签 `<div>` -->
     <div class="amount-row pay">
       <!-- [zh] 开始标签 `<span>` -->
-      <span class="label">{{ payLabel }}</span>
+      <span class="label">{{ hasRefund ? '剩余实付款' : payLabel }}</span>
       <!-- [zh] 开始标签 `<strong>` -->
-      <strong class="value pay-value">¥{{ formatOrderMoney(order?.amount) }}</strong>
+      <strong class="value pay-value">¥{{ formatOrderMoney(order?.remainingPayAmount ?? order?.amount) }}</strong>
     <!-- [zh] 闭合标签 `</div>` -->
     </div>
   <!-- [zh] 闭合标签 `</div>` -->
@@ -54,6 +54,8 @@ const props = withDefaults(
 );
 
 const showCoupon = computed(() => hasOrderCouponDiscount(props.order));
+
+const hasRefund = computed(() => Number(props.order?.refundedAmount ?? 0) > 0);
 
 const showOriginal = computed(() => showCoupon.value);
 

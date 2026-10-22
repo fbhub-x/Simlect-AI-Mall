@@ -775,16 +775,7 @@ public class OrderInfoServiceImpl implements OrderInfoService {
 	}
 
 	private void distributeCouponDiscount(List<OrderInfo> orderInfoList, BigDecimal discount) {
-		BigDecimal remaining = discount;
-		for (OrderInfo order : orderInfoList) {
-			if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
-				break;
-			}
-			BigDecimal amt = order.getAmount() == null ? BigDecimal.ZERO : order.getAmount();
-			BigDecimal off = remaining.min(amt);
-			order.setAmount(amt.subtract(off).setScale(2, BigDecimal.ROUND_HALF_UP));
-			remaining = remaining.subtract(off);
-		}
+		OrderListPayAmountHelper.distributeCouponDiscount(orderInfoList, discount);
 	}
 
 	// 获取支付信息
@@ -1585,43 +1576,30 @@ public class OrderInfoServiceImpl implements OrderInfoService {
 
 	/**
 	 * 计算退款金额：按实付金额比例分摊优惠券。
-	 * - 整单退款（最后一个正常项）：退实付全额 orderInfo.amount
-	 * - 部分退款：itemAmount×buyCount 占商品总额比例 × 实付，向下取整两位小数，确保累计退款不超过实付
+	 * - 最后一个正常项：退实付金额扣除已退累计后的余额。
+	 * - 部分退款：按明细小计 itemAmount 占原商品总额的比例分摊实付，保留两位小数。
+	 * itemAmount 在下单时已包含购买数量，退款分摊时不能再次乘 buyCount。
 	 */
 	private BigDecimal calcRefundAmount(OrderInfo orderInfo, OrderItem orderItem, int normalCount) {
 		BigDecimal paid = orderInfo.getAmount();
 		if (paid == null || paid.compareTo(BigDecimal.ZERO) <= 0) {
 			throw new BusinessException("订单实付金额异常，无法退款");
 		}
-		// 已退累计（此前已退款项的实际退款金额，order_item.refund_amount）
-		BigDecimal refundedTotal = BigDecimal.ZERO;
 		List<OrderItem> items = orderInfo.getOrderItemList();
 		if (items == null || items.isEmpty()) {
 			throw new BusinessException("订单商品明细不存在");
 		}
-		for (OrderItem item : items) {
-			if (item.getOrderItemStatus() != null
-					&& OrderItemStatusEnum.REFUND.getStatus().equals(item.getOrderItemStatus())
-					&& item.getRefundAmount() != null) {
-				refundedTotal = refundedTotal.add(item.getRefundAmount());
-			}
-		}
+		BigDecimal refundedTotal = sumRefundAmount(items);
 		BigDecimal remain = paid.subtract(refundedTotal).max(BigDecimal.ZERO);
 		if (normalCount == 1) {
 			// 最后一个正常项：退剩余未退金额（paid - 已退累计），防累计超退
 			return remain.setScale(2, BigDecimal.ROUND_HALF_UP);
 		}
-		BigDecimal goodsTotal = BigDecimal.ZERO;
-		for (OrderItem item : items) {
-			BigDecimal unitPrice = item.getItemAmount() == null ? BigDecimal.ZERO : item.getItemAmount();
-			BigDecimal count = BigDecimal.valueOf(item.getBuyCount() == null ? 0 : item.getBuyCount());
-			goodsTotal = goodsTotal.add(unitPrice.multiply(count));
-		}
+		BigDecimal goodsTotal = sumItemAmount(items, false);
 		if (goodsTotal.compareTo(BigDecimal.ZERO) <= 0) {
 			throw new BusinessException("订单商品金额异常，无法退款");
 		}
 		BigDecimal itemTotal = orderItem.getItemAmount() == null ? BigDecimal.ZERO : orderItem.getItemAmount();
-		itemTotal = itemTotal.multiply(BigDecimal.valueOf(orderItem.getBuyCount() == null ? 0 : orderItem.getBuyCount()));
 		BigDecimal share = paid.multiply(itemTotal).divide(goodsTotal, 2, BigDecimal.ROUND_HALF_DOWN);
 		// 部分退款分摊不得超过剩余可退金额（防累计超退）
 		return share.min(remain).max(BigDecimal.ZERO).setScale(2, BigDecimal.ROUND_HALF_UP);
@@ -1725,14 +1703,19 @@ public class OrderInfoServiceImpl implements OrderInfoService {
 		if (orderInfo == null) {
 			return;
 		}
+		BigDecimal paidAmount = orderInfo.getAmount() == null ? BigDecimal.ZERO : orderInfo.getAmount();
+		BigDecimal refundedAmount = sumRefundAmount(orderInfo.getOrderItemList());
+		BigDecimal payAmount = paidAmount.subtract(refundedAmount).max(BigDecimal.ZERO)
+				.setScale(2, BigDecimal.ROUND_HALF_UP);
+		orderInfo.setRefundedAmount(refundedAmount);
+		orderInfo.setRemainingPayAmount(payAmount);
 		if (isCouponRushOrder(orderInfo)) {
-			BigDecimal amt = orderInfo.getAmount() == null ? BigDecimal.ZERO : orderInfo.getAmount();
-			orderInfo.setOriginalAmount(amt);
+			orderInfo.setOriginalAmount(payAmount);
 			orderInfo.setCouponDiscountAmount(BigDecimal.ZERO);
 			return;
 		}
+		// 展示剩余正常明细的原金额和净实付，原 amount 保留用于支付核对及退款分摊。
 		BigDecimal original = sumItemAmount(orderInfo.getOrderItemList(), true);
-		BigDecimal payAmount = orderInfo.getAmount() == null ? BigDecimal.ZERO : orderInfo.getAmount();
 		orderInfo.setOriginalAmount(original);
 		BigDecimal discount = original.subtract(payAmount);
 		if (discount.compareTo(BigDecimal.ZERO) < 0) {
@@ -1778,6 +1761,19 @@ public class OrderInfoServiceImpl implements OrderInfoService {
 				order.setAvatar(brief.getAvatar());
 			}
 		}
+	}
+
+	private BigDecimal sumRefundAmount(List<OrderItem> items) {
+		BigDecimal total = BigDecimal.ZERO;
+		if (items != null) {
+			for (OrderItem item : items) {
+				if (OrderItemStatusEnum.REFUND.getStatus().equals(item.getOrderItemStatus())
+						&& item.getRefundAmount() != null) {
+					total = total.add(item.getRefundAmount());
+				}
+			}
+		}
+		return total.setScale(2, BigDecimal.ROUND_HALF_UP);
 	}
 
 	private BigDecimal sumItemAmount(List<OrderItem> items, boolean normalOnly) {

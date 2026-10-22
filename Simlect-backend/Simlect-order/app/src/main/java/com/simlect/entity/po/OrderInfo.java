@@ -55,6 +55,12 @@ public class OrderInfo implements Serializable {
 
 	private BigDecimal payTotalAmount;
 
+	/** 已退款累计金额，仅用于展示，不修改原支付金额 amount。 */
+	private BigDecimal refundedAmount;
+
+	/** 扣除已退款金额后的剩余实付款，仅用于展示。 */
+	private BigDecimal remainingPayAmount;
+
 	private BigDecimal originalAmount;
 
 	private BigDecimal couponDiscountAmount;
@@ -69,6 +75,22 @@ public class OrderInfo implements Serializable {
 
 	public void setPayTotalAmount(BigDecimal payTotalAmount) {
 		this.payTotalAmount = payTotalAmount;
+	}
+
+	public BigDecimal getRefundedAmount() {
+		return refundedAmount;
+	}
+
+	public void setRefundedAmount(BigDecimal refundedAmount) {
+		this.refundedAmount = refundedAmount;
+	}
+
+	public BigDecimal getRemainingPayAmount() {
+		return remainingPayAmount;
+	}
+
+	public void setRemainingPayAmount(BigDecimal remainingPayAmount) {
+		this.remainingPayAmount = remainingPayAmount;
 	}
 
 	public BigDecimal getOriginalAmount() {

@@ -344,6 +344,24 @@ class OrderControllerTest {
     }
 
     @Test
+    void getMyOrderDetail_missingOrder_returnsBusinessError() throws Exception {
+        String missingOrderId = "MISSING_ORDER_DAY8";
+        when(orderInfoService.getOrderInfoByOrderId(missingOrderId))
+                .thenReturn(null);
+
+        mockMvc.perform(post("/order/getMyOrderDetail")
+                        .param("orderId", missingOrderId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("error"))
+                .andExpect(jsonPath("$.code").value(600))
+                .andExpect(jsonPath("$.info").value("订单不存在"));
+
+        verify(orderItemService, never()).findListByParam(any());
+        verify(orderInfoService, never())
+                .enrichCouponInfo(any(OrderInfo.class));
+    }
+
+    @Test
     void getLogistics_success() throws Exception {
         OrderLogisticsInfo logistics = new OrderLogisticsInfo();
         logistics.setOrderId(ORDER_ID);

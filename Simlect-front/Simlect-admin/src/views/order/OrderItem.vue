@@ -69,9 +69,9 @@
               <!-- [zh] 开始标签 `<div>` -->
               <div class="amount-line pay">
                 <!-- [zh] 开始标签 `<span>` -->
-                <span class="total-amount-tips">实付款</span>
+                <span class="total-amount-tips">{{ hasRefund ? '剩余实付款' : '实付款' }}</span>
                 <!-- [zh] 开始标签 `<Price>` -->
-                <Price :price="data.amount"></Price>
+                <Price :price="data.remainingPayAmount ?? data.amount"></Price>
               <!-- [zh] 闭合标签 `</div>` -->
               </div>
             <!-- [zh] 闭合标签 `</div>` -->
@@ -110,6 +110,8 @@ const props = defineProps({
 const isCouponItem = (item) => isCouponOrder(props.data) || isCouponOrderItem(item)
 
 const hasCouponDiscount = computed(() => Number(props.data?.couponDiscountAmount ?? 0) > 0)
+
+const hasRefund = computed(() => Number(props.data?.refundedAmount ?? 0) > 0)
 
 const couponLabel = computed(() => {
   const name = props.data?.couponName

@@ -108,7 +108,7 @@
               <!-- [zh] 模板内容：`优惠券：{{ couponText(order) }} · -¥{{ amount(ord` -->
               优惠券：{{ couponText(order) }} · -¥{{ amount(order.couponDiscountAmount) }}
             </p>
-            <p class="pay-amount">实付 <strong>¥{{ amount(order.amount) }}</strong></p>
+            <p class="pay-amount">{{ Number(order.refundedAmount ?? 0) > 0 ? '剩余实付款' : '实付' }} <strong>¥{{ amount(order.remainingPayAmount ?? order.amount) }}</strong></p>
           </div>
           <div class="order-ops">
             <button v-if="order.orderStatus == 1" type="button" class="op-btn primary" @click="deliver(order)">

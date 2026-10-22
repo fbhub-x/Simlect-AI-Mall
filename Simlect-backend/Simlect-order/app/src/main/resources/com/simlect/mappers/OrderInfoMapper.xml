@@ -39,6 +39,7 @@
 			<result column="order_item_status" property="orderItemStatus" />
 			<result column="remark" property="remark" />
 			<result column="refund_order_id" property="refundOrderId" />
+			<result column="refund_amount" property="refundAmount" />
 		</collection>
 	</resultMap>
 

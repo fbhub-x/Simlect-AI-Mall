@@ -1189,6 +1189,94 @@ verify(payFeignSupport, never()).markSuccess(anyString(), anyString());
     }
 
     @Test
+    void refund_multiQuantityItems_usesLineSubtotalsWithoutMultiplyingAgain() {
+        OrderInfo order = orderWithItems(2);
+        order.setAmount(new BigDecimal("160.00"));
+        OrderItem itemA = order.getOrderItemList().get(0);
+        itemA.setBuyCount(2);
+        itemA.setItemAmount(new BigDecimal("100.00")); // 50.00 per unit, 2 units
+        order.getOrderItemList().get(1).setItemAmount(new BigDecimal("100.00"));
+        when(orderInfoMapper.selectList(any(OrderInfoQuery.class))).thenReturn(List.of(order));
+        when(redisComponent.tryMarkOrderRefundOnce(anyString())).thenReturn(true);
+        when(orderItemMapper.updateByParam(any(OrderItem.class), any(OrderItemQuery.class))).thenReturn(1);
+        when(orderInfoMapper.updateByParam(any(OrderInfo.class), any(OrderInfoQuery.class))).thenReturn(1);
+
+        service.refund(itemA, USER_ID);
+
+        verify(payFeignSupport).refund(eq(PAY_ORDER_ID), anyString(), eq(new BigDecimal("80.00")),
+                eq(PayChannelEnum.ALIPAY_PC.getPayScene()));
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).updateByParam(itemCaptor.capture(), any(OrderItemQuery.class));
+        assertEquals(new BigDecimal("80.00"), itemCaptor.getValue().getRefundAmount());
+        verify(stockFeignSupport).changeStockBatchIdempotent(
+                argThat(items -> items.size() == 1 && items.get(0).getBuyCount() == 2),
+                startsWith("order-refund-restock:"));
+        assertEquals(new BigDecimal("160.00"), order.getAmount());
+    }
+
+    @Test
+    void refund_sequentialItems_lastRefundIncludesRoundingRemainder() {
+        OrderInfo order = orderWithItems(3);
+        order.setAmount(new BigDecimal("1.00"));
+        for (OrderItem item : order.getOrderItemList()) {
+            item.setItemAmount(new BigDecimal("1.00"));
+        }
+        when(orderInfoMapper.selectList(any(OrderInfoQuery.class))).thenReturn(List.of(order));
+        when(orderInfoMapper.selectByOrderId(ORDER_ID)).thenReturn(order);
+        when(redisComponent.tryMarkOrderRefundOnce(anyString())).thenReturn(true);
+        when(orderItemMapper.updateByParam(any(OrderItem.class), any(OrderItemQuery.class)))
+                .thenAnswer(invocation -> {
+                    OrderItem update = invocation.getArgument(0);
+                    OrderItem persisted = order.getOrderItemList().stream()
+                            .filter(item -> item.getOrderItemId().equals(update.getOrderItemId()))
+                            .findFirst().orElseThrow();
+                    persisted.setOrderItemStatus(update.getOrderItemStatus());
+                    persisted.setRefundAmount(update.getRefundAmount());
+                    return 1;
+                });
+        when(orderInfoMapper.updateByParam(any(OrderInfo.class), any(OrderInfoQuery.class)))
+                .thenAnswer(invocation -> {
+                    OrderInfo update = invocation.getArgument(0);
+                    order.setOrderStatus(update.getOrderStatus());
+                    return 1;
+                });
+
+        for (OrderItem item : order.getOrderItemList()) {
+            service.refund(item, USER_ID);
+        }
+
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(payFeignSupport, times(3)).refund(eq(PAY_ORDER_ID), anyString(), amountCaptor.capture(),
+                eq(PayChannelEnum.ALIPAY_PC.getPayScene()));
+        assertEquals(List.of(new BigDecimal("0.33"), new BigDecimal("0.33"), new BigDecimal("0.34")),
+                amountCaptor.getAllValues());
+        BigDecimal refundedTotal = order.getOrderItemList().stream()
+                .map(OrderItem::getRefundAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertEquals(order.getAmount(), refundedTotal);
+        assertEquals(new BigDecimal("1.00"), order.getAmount());
+        assertEquals(OrderStatusEnum.REFUNDED.getStatus(), order.getOrderStatus());
+    }
+
+    @Test
+    void refund_partialRefund_capsShareAtRemainingPaidAmount() {
+        OrderInfo order = orderWithItems(3);
+        OrderItem refunded = order.getOrderItemList().get(0);
+        refunded.setOrderItemStatus(OrderItemStatusEnum.REFUND.getStatus());
+        refunded.setRefundAmount(new BigDecimal("95.00"));
+        order.setOrderStatus(OrderStatusEnum.PARTIALLY_REFUNDED.getStatus());
+        when(orderInfoMapper.selectList(any(OrderInfoQuery.class))).thenReturn(List.of(order));
+        when(orderInfoMapper.selectByOrderId(ORDER_ID)).thenReturn(order);
+        when(redisComponent.tryMarkOrderRefundOnce(anyString())).thenReturn(true);
+        when(orderItemMapper.updateByParam(any(OrderItem.class), any(OrderItemQuery.class))).thenReturn(1);
+
+        service.refund(order.getOrderItemList().get(1), USER_ID);
+
+        verify(payFeignSupport).refund(eq(PAY_ORDER_ID), anyString(), eq(new BigDecimal("5.00")),
+                eq(PayChannelEnum.ALIPAY_PC.getPayScene()));
+        assertEquals(new BigDecimal("100.00"), order.getAmount());
+    }
+
+    @Test
     void refund_couponOrder_apportionsRefundBelowOriginalPrice() {
         // 商品 100 元、用券实付 0.01：部分退款最多退 0.01，防超退
         OrderInfo couponOrder = orderWithItems(1);
@@ -1510,7 +1598,78 @@ verify(payFeignSupport, never()).markSuccess(anyString(), anyString());
 
         assertEquals(new BigDecimal("100.00"), o.getOriginalAmount());
         assertEquals(new BigDecimal("10.00"), o.getCouponDiscountAmount());
+        assertEquals(new BigDecimal("90.00"), o.getRemainingPayAmount());
+        assertEquals(0, o.getRefundedAmount().compareTo(BigDecimal.ZERO));
+        assertEquals(new BigDecimal("90.00"), o.getAmount());
         assertEquals("满减券", o.getCouponName());
+    }
+
+    @Test
+    void enrichCouponInfo_partiallyRefunded_usesRemainingAmountsWithoutDoubleDeduction() {
+        OrderInfo order = orderWithItems(2);
+        order.setOrderStatus(OrderStatusEnum.PARTIALLY_REFUNDED.getStatus());
+        order.setAmount(new BigDecimal("80.00"));
+        OrderItem refunded = order.getOrderItemList().get(0);
+        refunded.setItemAmount(new BigDecimal("60.00"));
+        refunded.setOrderItemStatus(OrderItemStatusEnum.REFUND.getStatus());
+        refunded.setRefundAmount(new BigDecimal("48.00"));
+        order.getOrderItemList().get(1).setItemAmount(new BigDecimal("40.00"));
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            service.enrichCouponInfo(order);
+
+            assertEquals(new BigDecimal("40.00"), order.getOriginalAmount());
+            assertEquals(new BigDecimal("32.00"), order.getRemainingPayAmount());
+            assertEquals(new BigDecimal("8.00"), order.getCouponDiscountAmount());
+            assertEquals(new BigDecimal("48.00"), order.getRefundedAmount());
+            assertEquals(new BigDecimal("80.00"), order.getAmount());
+            assertEquals(new BigDecimal("48.00"), refunded.getRefundAmount());
+        }
+    }
+
+    @Test
+    void enrichCouponInfo_fullyRefunded_zeroesRemainingAmountsAndPreservesOriginalPayment() {
+        OrderInfo order = orderWithItems(2);
+        order.setOrderStatus(OrderStatusEnum.REFUNDED.getStatus());
+        order.setAmount(new BigDecimal("80.00"));
+        OrderItem itemA = order.getOrderItemList().get(0);
+        itemA.setItemAmount(new BigDecimal("60.00"));
+        itemA.setOrderItemStatus(OrderItemStatusEnum.REFUND.getStatus());
+        itemA.setRefundAmount(new BigDecimal("48.00"));
+        OrderItem itemB = order.getOrderItemList().get(1);
+        itemB.setItemAmount(new BigDecimal("40.00"));
+        itemB.setOrderItemStatus(OrderItemStatusEnum.REFUND.getStatus());
+        itemB.setRefundAmount(new BigDecimal("32.00"));
+
+        service.enrichCouponInfo(order);
+
+        assertEquals(0, order.getOriginalAmount().compareTo(BigDecimal.ZERO));
+        assertEquals(0, order.getRemainingPayAmount().compareTo(BigDecimal.ZERO));
+        assertEquals(0, order.getCouponDiscountAmount().compareTo(BigDecimal.ZERO));
+        assertEquals(new BigDecimal("80.00"), order.getRefundedAmount());
+        assertEquals(new BigDecimal("80.00"), order.getAmount());
+        assertEquals(order.getAmount(), itemA.getRefundAmount().add(itemB.getRefundAmount()));
+    }
+
+    @Test
+    void enrichCouponInfo_remainingPaymentAboveOriginal_clampsDiscountToZero() {
+        OrderInfo order = orderWithItems(2);
+        order.setOrderStatus(OrderStatusEnum.PARTIALLY_REFUNDED.getStatus());
+        order.setAmount(new BigDecimal("100.00"));
+        OrderItem refunded = order.getOrderItemList().get(0);
+        refunded.setItemAmount(new BigDecimal("60.00"));
+        refunded.setOrderItemStatus(OrderItemStatusEnum.REFUND.getStatus());
+        refunded.setRefundAmount(new BigDecimal("48.00"));
+        order.getOrderItemList().get(1).setItemAmount(new BigDecimal("40.00"));
+
+        service.enrichCouponInfo(order);
+
+        assertEquals(new BigDecimal("40.00"), order.getOriginalAmount());
+        assertEquals(new BigDecimal("52.00"), order.getRemainingPayAmount());
+        assertEquals(0, order.getCouponDiscountAmount().compareTo(BigDecimal.ZERO));
+        assertEquals(new BigDecimal("48.00"), order.getRefundedAmount());
+        assertEquals(new BigDecimal("100.00"), order.getAmount());
+        verify(couponFeignSupport, never()).getCouponBrief(anyString());
     }
 
     @Test
